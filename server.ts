@@ -956,6 +956,26 @@ app.get('/api/download/bundle', (req, res) => {
   res.download(file, 'rare-045-repo.bundle');
 });
 
+// Download Packaged Android APK
+app.get('/api/download/apk', (req, res) => {
+  const file = path.resolve(__dirname, 'exports', 'rare-v1.0.0-release.apk');
+  if (fs.existsSync(file)) {
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    return res.download(file, 'RARE-v1.0.0-release.apk');
+  }
+  res.status(404).json({ error: { message: 'APK deliverable not found' } });
+});
+
+// Download Windows Standalone EXE
+app.get('/api/download/exe', (req, res) => {
+  const file = path.resolve(__dirname, 'exports', 'rare-v1.0.0-windows-x64.exe');
+  if (fs.existsSync(file)) {
+    res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+    return res.download(file, 'RARE-v1.0.0-windows-x64.exe');
+  }
+  res.status(404).json({ error: { message: 'EXE deliverable not found' } });
+});
+
 // Live Voice Fast-Inference Endpoint
 app.post('/api/voice/chat', async (req, res) => {
   const { speech } = req.body;
