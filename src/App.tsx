@@ -58,7 +58,8 @@ import {
   Cpu,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  AlertCircle
 } from 'lucide-react';
 import { themes, ThemeKey, ThemeConfig } from './theme';
 import { safeFetch, safePost } from './api';
@@ -338,17 +339,57 @@ export default function App() {
     setEditingConvId(null);
   };
 
-  const handleDeleteChat = async (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    await safeFetch(`/api/conversations/${id}`, { method: 'DELETE' });
-    setConversations((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      if (activeConvId === id) {
-        if (next.length > 0) setActiveConvId(next[0].id);
-        else handleNewChat();
+  const handleDeleteChat = async (id: string, e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      if ('preventDefault' in e) e.preventDefault();
+    }
+    try {
+      await safeFetch(`/api/conversations/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Failed to delete chat:', err);
+    }
+    const remaining = conversations.filter((c) => c.id !== id);
+    setConversations(remaining);
+    if (activeConvId === id) {
+      if (remaining.length > 0) {
+        setActiveConvId(remaining[0].id);
+      } else {
+        handleNewChat();
       }
-      return next;
-    });
+    }
+  };
+
+  // Mobile swipe gestures for opening/closing sidebar
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartXRef.current;
+    const endY = e.changedTouches[0]?.clientY ?? touchStartYRef.current;
+    const diffX = endX - touchStartXRef.current;
+    const diffY = endY - touchStartYRef.current;
+
+    // Detect horizontal swipe
+    if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY) * 1.3) {
+      if (diffX > 0 && touchStartXRef.current < 90) {
+        // Swiped right from left margin: open sidebar
+        setSidebarOpen(true);
+      } else if (diffX < -30 && sidebarOpen) {
+        // Swiped left while sidebar is open: close sidebar
+        setSidebarOpen(false);
+      }
+    }
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
   };
 
   const workspaceNavItems = [
@@ -359,7 +400,11 @@ export default function App() {
   ];
 
   return (
-    <div className={`flex h-screen w-screen overflow-hidden ${t.bg} ${t.textPrimary} font-sans transition-colors duration-200 relative`}>
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className={`flex h-screen w-screen overflow-hidden ${t.bg} ${t.textPrimary} font-sans transition-colors duration-200 relative`}
+    >
       {/* Mobile Backdrop */}
       {sidebarOpen && (
         <div
@@ -559,26 +604,42 @@ export default function App() {
 
                               <div className="flex items-center space-x-1 shrink-0">
                                 {c.messageCount !== undefined && (
-                                  <span className="text-[10px] text-slate-500 font-mono group-hover:hidden">
+                                  <span className="text-[10px] text-slate-500 font-mono group-hover:hidden hidden sm:inline">
                                     {c.messageCount}
                                   </span>
                                 )}
 
-                                {/* Action Buttons on Hover */}
-                                <div className="hidden group-hover:flex items-center space-x-1">
+                                {/* Action Buttons: Always accessible on mobile touch, visible on hover or when selected on desktop */}
+                                <div className={`flex items-center space-x-1 ${isSelected ? 'opacity-100' : 'opacity-90 sm:opacity-0 group-hover:opacity-100'} transition-opacity`}>
                                   <button
-                                    onClick={(e) => handleStartRename(c, e)}
-                                    className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10"
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartRename(c, e);
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    className="p-1.5 sm:p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition"
                                     title="Rename Chat"
                                   >
-                                    <Edit2 className="w-3 h-3" />
+                                    <Edit2 className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
                                   </button>
                                   <button
-                                    onClick={(e) => handleDeleteChat(c.id, e)}
-                                    className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-white/10"
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteChat(c.id, e);
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onTouchEnd={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteChat(c.id, e);
+                                    }}
+                                    className="p-1.5 sm:p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 active:text-rose-300 active:scale-95 transition"
                                     title="Delete Chat"
                                   >
-                                    <Trash2 className="w-3 h-3" />
+                                    <Trash2 className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
                                   </button>
                                 </div>
                               </div>
@@ -734,6 +795,7 @@ export default function App() {
               onRefreshConversations={() => loadConversations()}
               onNewChat={handleNewChat}
               onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
+              onDeleteChat={handleDeleteChat}
               onNavigate={setActiveTab}
             />
           )}
@@ -2086,6 +2148,7 @@ function CleanChatWorkspaceView({
   onRefreshConversations,
   onNewChat,
   onOpenLiveVoice,
+  onDeleteChat,
   onNavigate,
 }: {
   t: ThemeConfig;
@@ -2097,6 +2160,7 @@ function CleanChatWorkspaceView({
   onRefreshConversations?: () => void;
   onNewChat?: () => void;
   onOpenLiveVoice?: () => void;
+  onDeleteChat?: (id: string, e?: React.SyntheticEvent) => void;
   onNavigate?: (tab: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -2107,9 +2171,24 @@ function CleanChatWorkspaceView({
   const [loading, setLoading] = useState(false);
   const [personaMode, setPersonaMode] = useState<'casual' | 'professional' | 'creative' | 'concise'>('casual');
   const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null);
+
+  // High-accuracy Voice Recording & Real-time Live Transcription States
   const [isRecordingVoiceNote, setIsRecordingVoiceNote] = useState(false);
+  const [liveInterimTranscript, setLiveInterimTranscript] = useState('');
+  const [micAudioLevel, setMicAudioLevel] = useState(0);
+  const [voiceNoteError, setVoiceNoteError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionVoiceNoteRef = useRef<any>(null);
+  const isRecordingRef = useRef(false);
+  const baseInputRef = useRef('');
+  const finalAccumulatedRef = useRef('');
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = async (convId: string) => {
@@ -2134,6 +2213,25 @@ function CleanChatWorkspaceView({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
+  // Clean up any ongoing recording when component unmounts
+  useEffect(() => {
+    return () => {
+      if (isRecordingRef.current) {
+        isRecordingRef.current = false;
+        if (recognitionVoiceNoteRef.current) {
+          try {
+            recognitionVoiceNoteRef.current.stop();
+          } catch {}
+        }
+        if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+        if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        }
+      }
+    };
+  }, []);
+
   const speakText = (text: string) => {
     if (!voiceEnabled || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -2157,55 +2255,202 @@ function CleanChatWorkspaceView({
     setEditingTitle(false);
   };
 
-  // Voice Note Recording with proper punctuation and formatting
-  const toggleVoiceNote = () => {
-    if (isRecordingVoiceNote) {
-      if (recognitionVoiceNoteRef.current) {
+  // High-accuracy Voice Note Recording & Real-time Live Transcription Engine
+  const startVoiceNote = async () => {
+    setVoiceNoteError(null);
+    setLiveInterimTranscript('');
+    finalAccumulatedRef.current = '';
+    baseInputRef.current = input;
+    isRecordingRef.current = true;
+    setIsRecordingVoiceNote(true);
+
+    let streamObtained = false;
+    // 1. Audio Meter & MediaRecorder initialization
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        streamObtained = true;
+
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          audioContextRef.current = audioCtx;
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          analyserRef.current = analyser;
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateAudioLevel = () => {
+            if (!analyserRef.current || !isRecordingRef.current) return;
+            analyserRef.current.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            const avg = sum / dataArray.length;
+            setMicAudioLevel(Math.min(100, Math.round((avg / 128) * 100)));
+            animFrameRef.current = requestAnimationFrame(updateAudioLevel);
+          };
+          updateAudioLevel();
+        }
+
         try {
-          recognitionVoiceNoteRef.current.stop();
+          audioChunksRef.current = [];
+          const recorder = new MediaRecorder(stream);
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+          };
+          mediaRecorderRef.current = recorder;
+          recorder.start(250);
         } catch {}
       }
-      setIsRecordingVoiceNote(false);
-      return;
+    } catch (err: any) {
+      console.warn('Microphone stream error:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setVoiceNoteError('Microphone permission blocked. Please allow microphone access in your browser address bar.');
+      }
     }
 
+    // 2. Web Speech Recognition
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) {
-      alert('Speech recognition is not supported in this browser.');
-      return;
+    if (SpeechRec) {
+      try {
+        const rec = new SpeechRec();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = navigator.language || 'en-US';
+        rec.maxAlternatives = 1;
+
+        rec.onstart = () => {
+          setIsRecordingVoiceNote(true);
+        };
+
+        rec.onresult = (event: any) => {
+          let currentInterim = '';
+          let currentFinal = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              currentFinal += transcript;
+            } else {
+              currentInterim += transcript;
+            }
+          }
+
+          if (currentFinal.trim()) {
+            const phrase = currentFinal.trim();
+            const formatted = phrase.charAt(0).toUpperCase() + phrase.slice(1);
+            if (finalAccumulatedRef.current) {
+              finalAccumulatedRef.current += ' ' + formatted;
+            } else {
+              finalAccumulatedRef.current = formatted;
+            }
+          }
+
+          setLiveInterimTranscript(currentInterim.trim());
+
+          const base = baseInputRef.current.trim();
+          const committed = finalAccumulatedRef.current.trim();
+          const interim = currentInterim.trim();
+
+          let full = base;
+          if (committed) full = full ? `${full} ${committed}` : committed;
+          if (interim) full = full ? `${full} ${interim}` : interim;
+
+          setInput(full);
+        };
+
+        rec.onerror = (event: any) => {
+          if (event.error === 'no-speech') {
+            return;
+          }
+          if (event.error === 'not-allowed') {
+            setVoiceNoteError('Microphone permission blocked. Please click the lock or camera icon in your address bar to allow.');
+            setIsRecordingVoiceNote(false);
+            isRecordingRef.current = false;
+            return;
+          }
+          if (event.error === 'aborted') {
+            return;
+          }
+          console.warn('Speech recognition warning:', event.error);
+        };
+
+        rec.onend = () => {
+          if (isRecordingRef.current) {
+            try {
+              rec.start();
+            } catch {}
+          } else {
+            setIsRecordingVoiceNote(false);
+          }
+        };
+
+        recognitionVoiceNoteRef.current = rec;
+        rec.start();
+      } catch (e) {
+        console.warn('SpeechRecognition start error:', e);
+      }
+    } else {
+      if (!streamObtained) {
+        setVoiceNoteError('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari, or type your message.');
+      }
+    }
+  };
+
+  const stopVoiceNote = async () => {
+    isRecordingRef.current = false;
+    setIsRecordingVoiceNote(false);
+
+    if (recognitionVoiceNoteRef.current) {
+      try {
+        recognitionVoiceNoteRef.current.stop();
+      } catch {}
+      recognitionVoiceNoteRef.current = null;
     }
 
-    try {
-      const rec = new SpeechRec();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'en-US';
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    setMicAudioLevel(0);
 
-      rec.onstart = () => {
-        setIsRecordingVoiceNote(true);
-      };
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+    }
 
-      rec.onresult = (event: any) => {
-        let finalPhrase = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            const transcript = event.results[i][0].transcript.trim();
-            const formatted = transcript.charAt(0).toUpperCase() + transcript.slice(1);
-            finalPhrase += (finalPhrase ? ' ' : '') + formatted;
-          }
-        }
-        if (finalPhrase) {
-          setInput((prev) => (prev ? `${prev} ${finalPhrase}.` : `${finalPhrase}.`));
-        }
-      };
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
 
-      rec.onerror = () => setIsRecordingVoiceNote(false);
-      rec.onend = () => setIsRecordingVoiceNote(false);
+    // Polish final punctuation & capitalisation in input field
+    setInput((prev) => {
+      const trimmed = prev.trim();
+      if (!trimmed) return '';
+      let formatted = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+      if (!/[.?!]$/.test(formatted) && formatted.split(' ').length > 2) {
+        formatted += '.';
+      }
+      return formatted;
+    });
 
-      recognitionVoiceNoteRef.current = rec;
-      rec.start();
-    } catch {
-      setIsRecordingVoiceNote(false);
+    setLiveInterimTranscript('');
+  };
+
+  const toggleVoiceNote = () => {
+    if (isRecordingVoiceNote) {
+      stopVoiceNote();
+    } else {
+      startVoiceNote();
     }
   };
 
@@ -2363,6 +2608,18 @@ function CleanChatWorkspaceView({
               title="Open a New Chat"
             >
               <SquarePen className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Delete Active Chat Button */}
+          {onDeleteChat && (
+            <button
+              type="button"
+              onClick={(e) => onDeleteChat(activeConvId, e)}
+              className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 active:scale-95 transition"
+              title="Delete This Chat"
+            >
+              <Trash2 className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -2570,17 +2827,81 @@ function CleanChatWorkspaceView({
           </div>
         )}
 
-        {/* Voice Note Recording Live Pulse */}
+        {/* Voice Note Error Banner */}
+        {voiceNoteError && (
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs shadow-md animate-in fade-in">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{voiceNoteError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVoiceNoteError(null)}
+              className="text-slate-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-white/10"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Voice Note Recording Live Pulse & Streaming Transcript Bar */}
         {isRecordingVoiceNote && (
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>Recording Voice Note... Speak naturally with punctuation. Tap microphone again when finished.</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-indigo-950/50 border border-emerald-500/40 text-emerald-300 text-xs shadow-lg animate-in fade-in duration-150">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
+                <span className="absolute w-5 h-5 rounded-full bg-emerald-500/30 animate-ping" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              </div>
+
+              {/* Audio Wave Meter */}
+              <div className="flex items-center space-x-0.5 h-3.5 shrink-0">
+                {[20, 55, 85, 45, 75, 30].map((h, i) => (
+                  <div
+                    key={i}
+                    className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
+                    style={{
+                      height: `${Math.max(4, Math.round((h * (micAudioLevel > 0 ? micAudioLevel : 35)) / 100))}px`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              <div className="truncate">
+                <span className="font-semibold text-white">Listening: </span>
+                <span className="text-emerald-200 font-medium">
+                  {liveInterimTranscript || input || 'Speak naturally into your microphone...'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setInput(baseInputRef.current);
+                  stopVoiceNote();
+                }}
+                className="px-2 py-1 rounded-md text-[11px] bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={stopVoiceNote}
+                className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition shadow"
+              >
+                Done Speaking
+              </button>
+            </div>
           </div>
         )}
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (isRecordingVoiceNote) {
+              stopVoiceNote();
+            }
             handleSend();
           }}
           className={`flex items-center space-x-2 ${t.card} border ${t.inputBorder} rounded-xl px-3 py-1.5 shadow-inner`}
@@ -2617,14 +2938,21 @@ function CleanChatWorkspaceView({
           <button
             type="button"
             onClick={toggleVoiceNote}
-            className={`p-1.5 rounded-lg transition ${
+            className={`p-1.5 sm:p-2 rounded-xl transition flex items-center justify-center relative ${
               isRecordingVoiceNote
-                ? 'bg-emerald-600 text-white animate-pulse'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30 scale-105'
+                : 'text-slate-400 hover:text-white hover:bg-white/5 active:scale-95'
             }`}
-            title={isRecordingVoiceNote ? 'Stop Voice Note Recording' : 'Record Voice Note (Transcribe Speech)'}
+            title={isRecordingVoiceNote ? 'Stop Recording Voice Note (Done)' : 'Click to Speak (Voice-to-Text)'}
           >
-            <Mic className="w-4 h-4" />
+            {isRecordingVoiceNote ? (
+              <>
+                <Mic className="w-4 h-4 animate-pulse text-slate-950" />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping" />
+              </>
+            ) : (
+              <Mic className="w-4 h-4" />
+            )}
           </button>
 
           {/* Quick Live Voice Launch Button */}
